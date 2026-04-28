@@ -1,0 +1,48 @@
+name: gpipe
+description: Generate install.sh, install.ps1, and checksums.txt for GitHub releases
+author: thomaslaurenson
+
+inputs:
+  version:
+    description: Release version tag (e.g. v1.2.3). Validated as semver before use
+    required: true
+    default: ${{ github.ref_name }}
+  repo:
+    description: GitHub repository in owner/repo format
+    required: false
+    default: ${{ github.repository }}
+  config:
+    description: Path to .gpipe.yml config file relative to repo root
+    required: false
+    default: .gpipe.yml
+
+runs:
+  using: composite
+  steps:
+    - name: Validate version format
+      shell: bash
+      run: |
+        version="${{ inputs.version }}"
+        if ! [[ "$version" =~ ^v?[0-9]+\.[0-9]+(\.[0-9]+)?$ ]]; then
+          echo "Error: invalid version '$version': expected semantic version like v1.2.3 or 1.2.3"
+          exit 1
+        fi
+
+    - name: Set up Go
+      uses: actions/setup-go@v6
+      with:
+        go-version-file: ${{ github.action_path }}/vendor/gpipe/go.mod
+        cache-dependency-path: ${{ github.action_path }}/vendor/gpipe/go.sum
+
+    - name: Build gpipe
+      shell: bash
+      run: go build -C "${{ github.action_path }}/vendor/gpipe" -o "${{ runner.temp }}/gpipe" .
+
+    - name: Generate install scripts
+      shell: bash
+      working-directory: ${{ github.workspace }}
+      run: |
+        "${{ runner.temp }}/gpipe" generate \
+          --repo "${{ inputs.repo }}" \
+          --version "${{ inputs.version }}" \
+          --config "${{ inputs.config }}"
