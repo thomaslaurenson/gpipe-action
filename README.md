@@ -6,9 +6,9 @@ A composite GitHub Action that generates `install.sh`, `install.ps1`, and `check
 
 ```yaml
 - uses: thomaslaurenson/gpipe-action@v1
-  with:
-    version: ${{ github.ref_name }}
 ```
+
+That's it. By default `version` comes from `${{ github.ref_name }}`, `repo` from `${{ github.repository }}`, and config from `.gpipe.yml` in your repo root.
 
 ### Inputs
 
@@ -17,6 +17,8 @@ A composite GitHub Action that generates `install.sh`, `install.ps1`, and `check
 | `version` | Yes | `${{ github.ref_name }}` | Release version tag. Validated as semver before use. |
 | `repo` | No | `${{ github.repository }}` | GitHub repository in `owner/repo` format. |
 | `config` | No | `.gpipe.yml` | Path to config file relative to repo root. |
+| `gpipe_version` | No | `v1.0.0` | Version of gpipe binary to download from its own releases. |
+| `cosign_sign` | No | `false` | Sign `checksums.txt` with cosign after generation. |
 
 ### Example release workflow
 
@@ -32,6 +34,7 @@ jobs:
     runs-on: ubuntu-24.04
     permissions:
       contents: write
+      id-token: write  # required when cosign_sign: true
     steps:
       - uses: actions/checkout@v6
 
@@ -40,7 +43,7 @@ jobs:
 
       - uses: thomaslaurenson/gpipe-action@v1
         with:
-          version: ${{ github.ref_name }}
+          cosign_sign: true
 
       - name: Create release
         run: |
@@ -79,9 +82,15 @@ Use `@v1` to always receive non-breaking updates automatically. Breaking changes
 
 ```yaml
 uses: thomaslaurenson/gpipe-action@v1       # recommended, receives patch/minor fixes
-uses: thomaslaurenson/gpipe-action@v1.2.0   # pinned to exact release
+uses: thomaslaurenson/gpipe-action@v1.0.0   # pinned to exact release
 ```
 
-## Vendored gpipe source
+## Updating the bundled gpipe version
 
-The `vendor/gpipe/` directory contains a vendored copy of the `gpipe` source. The current vendored version is recorded in `vendor/gpipe/GPIPE_VERSION`. See [CONTRIBUTING.md](CONTRIBUTING.md) for how to sync a new version.
+The `gpipe_version` input controls which gpipe binary is downloaded at runtime. To update the pinned default:
+
+```bash
+make bump-gpipe GPIPE_VERSION=v1.0.0
+```
+
+Then commit and push the updated `action.yml`.
