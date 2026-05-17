@@ -4,7 +4,7 @@ author: thomaslaurenson
 
 inputs:
   version:
-    description: Release version tag (e.g. v1.2.3). Validated as semver before use
+    description: Release version tag (e.g. v1.2.3). Validated as semver before use.
     required: true
     default: ${{ github.ref_name }}
   repo:
@@ -15,6 +15,14 @@ inputs:
     description: Path to .gpipe.yml config file relative to repo root
     required: false
     default: .gpipe.yml
+  gpipe_version:
+    description: Version of gpipe to download from its own releases
+    required: false
+    default: v1.0.0
+  cosign_sign:
+    description: Sign checksums.txt with cosign after generation
+    required: false
+    default: 'false'
 
 runs:
   using: composite
@@ -28,21 +36,59 @@ runs:
           exit 1
         fi
 
-    - name: Set up Go
-      uses: actions/setup-go@v6
-      with:
-        go-version-file: ${{ github.action_path }}/vendor/gpipe/go.mod
-        cache-dependency-path: ${{ github.action_path }}/vendor/gpipe/go.sum
+    - name: Install cosign
+      uses: sigstore/cosign-installer@v3
 
-    - name: Build gpipe
+    - name: Download gpipe binary
       shell: bash
-      run: go build -C "${{ github.action_path }}/vendor/gpipe" -o "${{ runner.temp }}/gpipe" .
+      run: |
+        curl -fsSL --connect-timeout 30 --speed-limit 1024 --speed-time 30 \
+          "https://github.com/thomaslaurenson/gpipe/releases/download/${{ inputs.gpipe_version }}/gpipe-linux-x86_64" \
+          -o "$RUNNER_TEMP/gpipe"
 
-    - name: Generate install scripts
+    - name: Download checksums.txt for gpipe binary
+      shell: bash
+      run: |
+        curl -fsSL --connect-timeout 30 --speed-limit 1024 --speed-time 30 \
+          "https://github.com/thomaslaurenson/gpipe/releases/download/${{ inputs.gpipe_version }}/checksums.txt" \
+          -o "$RUNNER_TEMP/gpipe-checksums.txt"
+
+    - name: Verify gpipe binary checksum
+      shell: bash
+      run: |
+        cd "$RUNNER_TEMP"
+        expected=$(grep -F '  gpipe-linux-x86_64' gpipe-checksums.txt | awk '{print $1}')
+        if [[ -z "$expected" ]]; then
+          echo "Error: gpipe-linux-x86_64 not found in checksums.txt" >&2
+          exit 1
+        fi
+        actual=$(sha256sum gpipe | awk '{print $1}')
+        if [[ "$expected" != "$actual" ]]; then
+          echo "Error: gpipe checksum mismatch" >&2
+          echo "  expected: $expected" >&2
+          echo "  actual:   $actual" >&2
+          exit 1
+        fi
+        echo "gpipe checksum OK"
+
+    - name: Verify cosign signature on gpipe checksums.txt
+      shell: bash
+      run: |
+        cosign verify-blob \
+          --certificate-identity-regexp='.*' \
+          --certificate-oidc-issuer-regexp='.*' \
+          "$RUNNER_TEMP/gpipe-checksums.txt"
+
+    - name: Make gpipe executable
+      shell: bash
+      run: chmod +x "$RUNNER_TEMP/gpipe"
+
+    - name: Run gpipe generate
       shell: bash
       working-directory: ${{ github.workspace }}
       run: |
-        "${{ runner.temp }}/gpipe" generate \
+        "$RUNNER_TEMP/gpipe" generate \
           --repo "${{ inputs.repo }}" \
           --version "${{ inputs.version }}" \
-          --config "${{ inputs.config }}"
+          --config "${{ inputs.config }}" \
+          $([ "${{ inputs.cosign_sign }}" = "true" ] && echo "--sign")
