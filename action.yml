@@ -37,7 +37,6 @@ runs:
         fi
 
     - name: Install cosign
-      if: inputs.cosign_sign == 'true'
       uses: sigstore/cosign-installer@v3
 
     - name: Download gpipe binary
