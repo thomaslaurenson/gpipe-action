@@ -71,12 +71,20 @@ runs:
         fi
         echo "gpipe checksum OK"
 
+    - name: Download cosign bundle for gpipe checksums.txt
+      shell: bash
+      run: |
+        curl -fsSL --connect-timeout 30 --speed-limit 1024 --speed-time 30 \
+          "https://github.com/thomaslaurenson/gpipe/releases/download/${{ inputs.gpipe_version }}/checksums.txt.sig" \
+          -o "$RUNNER_TEMP/gpipe-checksums.txt.sig"
+
     - name: Verify cosign signature on gpipe checksums.txt
       shell: bash
       run: |
         cosign verify-blob \
-          --certificate-identity-regexp='.*' \
-          --certificate-oidc-issuer-regexp='.*' \
+          --bundle "$RUNNER_TEMP/gpipe-checksums.txt.sig" \
+          --certificate-identity-regexp='https://github.com/thomaslaurenson/gpipe/.github/workflows/.*' \
+          --certificate-oidc-issuer='https://token.actions.githubusercontent.com' \
           "$RUNNER_TEMP/gpipe-checksums.txt"
 
     - name: Make gpipe executable
